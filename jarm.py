@@ -9,6 +9,9 @@
 # Converted to Python by:
 # Caleb Yu
 #
+# Added multiprocessing by: 
+# Leo M. Falcon (https://github.com/A3sal0n)
+#
 # Copyright (c) 2020, salesforce.com, inc.
 # All rights reserved.
 # Licensed under the BSD 3-Clause license.
@@ -25,6 +28,8 @@ import random
 import argparse
 import hashlib
 import ipaddress
+from queue import Queue
+from threading import Thread
 
 parser = argparse.ArgumentParser(description="Enter an IP address and port to scan.")
 group = parser.add_mutually_exclusive_group()
@@ -464,94 +469,98 @@ def ParseNumber(number):
     else:
         return int(number)
 
-def main():
-    #Select the packets and formats to send
-    #Array format = [destination_host,destination_port,version,cipher_list,cipher_order,GREASE,RARE_APLN,1.3_SUPPORT,extension_orders]
-    tls1_2_forward = [destination_host, destination_port, "TLS_1.2", "ALL", "FORWARD", "NO_GREASE", "APLN", "1.2_SUPPORT", "REVERSE"]
-    tls1_2_reverse = [destination_host, destination_port, "TLS_1.2", "ALL", "REVERSE", "NO_GREASE", "APLN", "1.2_SUPPORT", "FORWARD"]
-    tls1_2_top_half = [destination_host, destination_port, "TLS_1.2", "ALL", "TOP_HALF", "NO_GREASE", "APLN", "NO_SUPPORT", "FORWARD"]
-    tls1_2_bottom_half = [destination_host, destination_port, "TLS_1.2", "ALL", "BOTTOM_HALF", "NO_GREASE", "RARE_APLN", "NO_SUPPORT", "FORWARD"]
-    tls1_2_middle_out = [destination_host, destination_port, "TLS_1.2", "ALL", "MIDDLE_OUT", "GREASE", "RARE_APLN", "NO_SUPPORT", "REVERSE"]
-    tls1_1_middle_out = [destination_host, destination_port, "TLS_1.1", "ALL", "FORWARD", "NO_GREASE", "APLN", "NO_SUPPORT", "FORWARD"]
-    tls1_3_forward = [destination_host, destination_port, "TLS_1.3", "ALL", "FORWARD", "NO_GREASE", "APLN", "1.3_SUPPORT", "REVERSE"]
-    tls1_3_reverse = [destination_host, destination_port, "TLS_1.3", "ALL", "REVERSE", "NO_GREASE", "APLN", "1.3_SUPPORT", "FORWARD"]
-    tls1_3_invalid = [destination_host, destination_port, "TLS_1.3", "NO1.3", "FORWARD", "NO_GREASE", "APLN", "1.3_SUPPORT", "FORWARD"]
-    tls1_3_middle_out = [destination_host, destination_port, "TLS_1.3", "ALL", "MIDDLE_OUT", "GREASE", "APLN", "1.3_SUPPORT", "REVERSE"]
-    #Possible versions: SSLv3, TLS_1, TLS_1.1, TLS_1.2, TLS_1.3
-    #Possible cipher lists: ALL, NO1.3
-    #GREASE: either NO_GREASE or GREASE
-    #APLN: either APLN or RARE_APLN
-    #Supported Verisons extension: 1.2_SUPPPORT, NO_SUPPORT, or 1.3_SUPPORT
-    #Possible Extension order: FORWARD, REVERSE
-    queue = [tls1_2_forward, tls1_2_reverse, tls1_2_top_half, tls1_2_bottom_half, tls1_2_middle_out, tls1_1_middle_out, tls1_3_forward, tls1_3_reverse, tls1_3_invalid, tls1_3_middle_out]
-    jarm = ""
-    #Assemble, send, and decipher each packet
-    iterate = 0
-    while iterate < len(queue):
-        payload = packet_building(queue[iterate])
-        server_hello, ip = send_packet(payload)
-        #Deal with timeout error
-        if server_hello == "TIMEOUT":
-            jarm = "|||,|||,|||,|||,|||,|||,|||,|||,|||,|||"
-            break
-        ans = read_packet(server_hello, queue[iterate])
-        jarm += ans
-        iterate += 1
-        if iterate == len(queue):
-            break
+def main(q):
+    while True:
+        dhost = q.get()
+        #Select the packets and formats to send
+        #Array format = [destination_host,destination_port,version,cipher_list,cipher_order,GREASE,RARE_APLN,1.3_SUPPORT,extension_orders]
+        tls1_2_forward = [dhost, destination_port, "TLS_1.2", "ALL", "FORWARD", "NO_GREASE", "APLN", "1.2_SUPPORT", "REVERSE"]
+        tls1_2_reverse = [dhost, destination_port, "TLS_1.2", "ALL", "REVERSE", "NO_GREASE", "APLN", "1.2_SUPPORT", "FORWARD"]
+        tls1_2_top_half = [dhost, destination_port, "TLS_1.2", "ALL", "TOP_HALF", "NO_GREASE", "APLN", "NO_SUPPORT", "FORWARD"]
+        tls1_2_bottom_half = [dhost, destination_port, "TLS_1.2", "ALL", "BOTTOM_HALF", "NO_GREASE", "RARE_APLN", "NO_SUPPORT", "FORWARD"]
+        tls1_2_middle_out = [dhost, destination_port, "TLS_1.2", "ALL", "MIDDLE_OUT", "GREASE", "RARE_APLN", "NO_SUPPORT", "REVERSE"]
+        tls1_1_middle_out = [dhost, destination_port, "TLS_1.1", "ALL", "FORWARD", "NO_GREASE", "APLN", "NO_SUPPORT", "FORWARD"]
+        tls1_3_forward = [dhost, destination_port, "TLS_1.3", "ALL", "FORWARD", "NO_GREASE", "APLN", "1.3_SUPPORT", "REVERSE"]
+        tls1_3_reverse = [dhost, destination_port, "TLS_1.3", "ALL", "REVERSE", "NO_GREASE", "APLN", "1.3_SUPPORT", "FORWARD"]
+        tls1_3_invalid = [dhost, destination_port, "TLS_1.3", "NO1.3", "FORWARD", "NO_GREASE", "APLN", "1.3_SUPPORT", "FORWARD"]
+        tls1_3_middle_out = [dhost, destination_port, "TLS_1.3", "ALL", "MIDDLE_OUT", "GREASE", "APLN", "1.3_SUPPORT", "REVERSE"]
+        #Possible versions: SSLv3, TLS_1, TLS_1.1, TLS_1.2, TLS_1.3
+        #Possible cipher lists: ALL, NO1.3
+        #GREASE: either NO_GREASE or GREASE
+        #APLN: either APLN or RARE_APLN
+        #Supported Verisons extension: 1.2_SUPPPORT, NO_SUPPORT, or 1.3_SUPPORT
+        #Possible Extension order: FORWARD, REVERSE
+        queue = [tls1_2_forward, tls1_2_reverse, tls1_2_top_half, tls1_2_bottom_half, tls1_2_middle_out, tls1_1_middle_out, tls1_3_forward, tls1_3_reverse, tls1_3_invalid, tls1_3_middle_out]
+        jarm = ""
+        #Assemble, send, and decipher each packet
+        iterate = 0
+        while iterate < len(queue):
+            payload = packet_building(queue[iterate])
+            server_hello, ip = send_packet(payload)
+            #Deal with timeout error
+            if server_hello == "TIMEOUT":
+                jarm = "|||,|||,|||,|||,|||,|||,|||,|||,|||,|||"
+                break
+            ans = read_packet(server_hello, queue[iterate])
+            jarm += ans
+            iterate += 1
+            if iterate == len(queue):
+                break
+            else:
+                jarm += ","
+        #Fuzzy hash
+        result = jarm_hash(jarm)
+        #Write to file
+        if args.output:
+            if ip != None:
+                if args.json:
+                    file.write('{"host":"' + dhost + '","ip":"' + ip + '","result":"' + result + '"')
+                else:
+                    file.write(dhost + "," + ip + "," + result)
+            else:
+                file.write(dhost + ",Failed to resolve IP," + result)
+            #Verbose mode adds pre-fuzzy-hashed JARM
+            if args.verbose:
+                if args.json:
+                    file.write(',"jarm":"' + jarm + '"')
+                else:
+                    file.write("," + jarm)
+            if args.json:
+                file.write("}")
+            file.write("\n")
+        #Print to STDOUT
         else:
-            jarm += ","
-    #Fuzzy hash
-    result = jarm_hash(jarm)
-    #Write to file
-    if args.output:
-        if ip != None:
-            if args.json:
-                file.write('{"host":"' + destination_host + '","ip":"' + ip + '","result":"' + result + '"')
+            if ip != None:
+                if args.json:
+                    sys.stdout.write('{"host":"' + dhost + '","ip":"' + ip + '","result":"' + result + '"')
+                else:
+                    print("Domain: " + dhost)
+                    print("Resolved IP: " + ip)
+                    print("JARM: " + result)
             else:
-                file.write(destination_host + "," + ip + "," + result)
-        else:
-            file.write(destination_host + ",Failed to resolve IP," + result)
-        #Verbose mode adds pre-fuzzy-hashed JARM
-        if args.verbose:
+                if args.json:
+                    sys.stdout.write('{"host":"' + dhost + '","ip":null,"result":"' + result + '"')
+                else:
+                    print("Domain: " + dhost)
+                    print("Resolved IP: IP failed to resolve.")
+                    print("JARM: " + result)
+            #Verbose mode adds pre-fuzzy-hashed JARM
+            if args.verbose:
+                if args.json:
+                    sys.stdout.write(',"jarm":"' + jarm + '"')
+                else:
+                    scan_count = 1
+                    for round in jarm.split(","):
+                        print("Scan " + str(scan_count) + ": " + round, end="")
+                        if scan_count == len(jarm.split(",")):
+                            print("\n",end="")
+                        else:
+                            print(",")
+                        scan_count += 1
             if args.json:
-                file.write(',"jarm":"' + jarm + '"')
-            else:
-                file.write("," + jarm)
-        if args.json:
-            file.write("}")
-        file.write("\n")
-    #Print to STDOUT
-    else:
-        if ip != None:
-            if args.json:
-                sys.stdout.write('{"host":"' + destination_host + '","ip":"' + ip + '","result":"' + result + '"')
-            else:
-                print("Domain: " + destination_host)
-                print("Resolved IP: " + ip)
-                print("JARM: " + result)
-        else:
-            if args.json:
-                sys.stdout.write('{"host":"' + destination_host + '","ip":null,"result":"' + result + '"')
-            else:
-                print("Domain: " + destination_host)
-                print("Resolved IP: IP failed to resolve.")
-                print("JARM: " + result)
-        #Verbose mode adds pre-fuzzy-hashed JARM
-        if args.verbose:
-            if args.json:
-                sys.stdout.write(',"jarm":"' + jarm + '"')
-            else:
-                scan_count = 1
-                for round in jarm.split(","):
-                    print("Scan " + str(scan_count) + ": " + round, end="")
-                    if scan_count == len(jarm.split(",")):
-                        print("\n",end="")
-                    else:
-                        print(",")
-                    scan_count += 1
-        if args.json:
-            sys.stdout.write("}\n")
+                sys.stdout.write("}\n")
+        
+        q.task_done()
 
 
 #set proxy
@@ -588,9 +597,18 @@ if args.output:
         else:
             output_file = args.output
     file = open(output_file, "a+")
+
+
 if args.input:
     input_file = open(args.input, "r")
     entries = input_file.readlines()
+    q = Queue(maxsize=0)
+    # Change the variable below to increase the number of threads if desired
+    num_threads = 8
+    for i in range(num_threads):
+        worker = Thread(target=main, args=(q,))
+        worker.setDaemon(True)
+        worker.start()
     for entry in entries:
         port_check = entry.split(",")
         if len(port_check) == 2:
@@ -598,9 +616,11 @@ if args.input:
             destination_host = port_check[0]
         else:
             destination_host = entry[:-1]
-        main()
+        q.put(destination_host)
+    q.join()
+
 else:
-    main()
+    print('This jarm version can only be executed using the --input option')
 #Close files
 if args.output:
     file.close()
