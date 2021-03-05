@@ -28,6 +28,7 @@ import random
 import argparse
 import hashlib
 import ipaddress
+import time
 from queue import Queue
 from threading import Thread
 
@@ -274,18 +275,18 @@ def supported_versions(jarm_details, grease):
     return ext
 
 #Send the assembled client hello using a socket
-def send_packet(packet):
+def send_packet(packet,dhost):
     try:
         #Determine if the input is an IP or domain name
         try:
-            if (type(ipaddress.ip_address(destination_host)) == ipaddress.IPv4Address) or (type(ipaddress.ip_address(destination_host)) == ipaddress.IPv6Address):
+            if (type(ipaddress.ip_address(dhost)) == ipaddress.IPv4Address) or (type(ipaddress.ip_address(dhost)) == ipaddress.IPv6Address):
                 raw_ip = True
-                ip = (destination_host, destination_port)
+                ip = (dhost, destination_port)
         except ValueError as e:
                 ip = (None, None)
                 raw_ip = False
         #Connect the socket
-        if ":" in destination_host:
+        if ":" in dhost:
             if args.proxy:
                 sock = socks.socksocket(socket.AF_INET6, socket.SOCK_STREAM)
                 sock.set_proxy(socks.SOCKS5, proxyhost, proxyport)
@@ -293,7 +294,7 @@ def send_packet(packet):
                 sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
             #Timeout of 20 seconds
             sock.settimeout(20)
-            sock.connect((destination_host, destination_port, 0, 0))
+            sock.connect((dhost, destination_port, 0, 0))
         else:
             if args.proxy:
                 sock = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
@@ -302,7 +303,7 @@ def send_packet(packet):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             #Timeout of 20 seconds
             sock.settimeout(20)
-            sock.connect((destination_host, destination_port))
+            sock.connect((dhost, destination_port))
         #Resolve IP if given a domain name
         if raw_ip == False:
             ip = sock.getpeername()
@@ -496,7 +497,7 @@ def main(q):
         iterate = 0
         while iterate < len(queue):
             payload = packet_building(queue[iterate])
-            server_hello, ip = send_packet(payload)
+            server_hello, ip = send_packet(payload,dhost)
             #Deal with timeout error
             if server_hello == "TIMEOUT":
                 jarm = "|||,|||,|||,|||,|||,|||,|||,|||,|||,|||"
@@ -559,7 +560,7 @@ def main(q):
                         scan_count += 1
             if args.json:
                 sys.stdout.write("}\n")
-        
+        time.sleep(0.1)
         q.task_done()
 
 
@@ -598,7 +599,6 @@ if args.output:
             output_file = args.output
     file = open(output_file, "a+")
 
-
 if args.input:
     input_file = open(args.input, "r")
     entries = input_file.readlines()
@@ -610,6 +610,7 @@ if args.input:
         worker.setDaemon(True)
         worker.start()
     for entry in entries:
+        #entry = entry.strip()
         port_check = entry.split(",")
         if len(port_check) == 2:
             destination_port = int(port_check[1][:-1])
