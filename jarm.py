@@ -307,6 +307,11 @@ def send_packet(packet,dhost):
         #Resolve IP if given a domain name
         if raw_ip == False:
             ip = sock.getpeername()
+            # Retry IP resolution if it fails on the first attempt
+            if not ip:
+                for i in range(5):
+                    ip = sock.getpeername()
+                    time.sleep(0.2)
         sock.sendall(packet)
         #Receive server hello
         data = sock.recv(1484)
@@ -517,9 +522,9 @@ def main(q):
                 if args.json:
                     file.write('{"host":"' + dhost + '","ip":"' + ip + '","result":"' + result + '"')
                 else:
-                    file.write(dhost + "," + ip + "," + result)
+                    file.write('{"host":"' + dhost + "," + ip + "," + result)
             else:
-                file.write(dhost + ",Failed to resolve IP," + result)
+                file.write('{"host":"' + dhost + ",Failed to resolve IP," + result)
             #Verbose mode adds pre-fuzzy-hashed JARM
             if args.verbose:
                 if args.json:
